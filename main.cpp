@@ -2,6 +2,7 @@
 #include <commctrl.h>
 #include <memory>
 #include <string>
+#include <cstdio>
 #include "resource.h"
 #include "SettingsManager.h"
 #include "DspEngine.h"
@@ -25,6 +26,16 @@
 static const wchar_t* MAIN_WND_CLASS = L"SonicBoostMainWindowClass";
 static const wchar_t* MUTEX_NAME = L"Global\\SonicBoost.InstanceMutex";
 
+static void LogDebug(const wchar_t* msg) {
+    FILE* f = _wfopen(L"sonicboost.log", L"a, ccs=UTF-8");
+    if (f) {
+        SYSTEMTIME st;
+        GetLocalTime(&st);
+        fwprintf(f, L"[%02d:%02d:%02d.%03d] %s\n", st.wHour, st.wMinute, st.wSecond, st.wMilliseconds, msg);
+        fclose(f);
+    }
+}
+
 
 class Application {
 public:
@@ -39,6 +50,7 @@ public:
     }
 
     int Run() {
+        LogDebug(L"Application starting...");
         CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
 
         // Ensure working directory is the application directory
@@ -53,6 +65,7 @@ public:
         // Enforce single instance
         HANDLE hMutex = CreateMutexW(NULL, TRUE, MUTEX_NAME);
         if (GetLastError() == ERROR_ALREADY_EXISTS) {
+            LogDebug(L"Another instance detected. Exiting.");
             HWND hWndExisting = FindWindowW(MAIN_WND_CLASS, NULL);
             if (hWndExisting) {
                 PostMessageW(hWndExisting, WM_COMMAND, ID_BOOSTER_SHOW, 0);
@@ -86,16 +99,23 @@ public:
         );
 
         if (!m_hWnd) {
+            LogDebug(L"CreateWindowExW failed!");
             if (hMutex) CloseHandle(hMutex);
             return 1;
         }
+
+        LogDebug(L"Controller window created successfully.");
 
         // Create UI components
         m_popup = std::make_unique<SliderPopup>(m_hInstance, m_settings, m_audio);
         m_popup->Create();
 
         m_tray = std::make_unique<TrayManager>(m_hWnd, m_hInstance, m_settings, *m_popup);
-        m_tray->Initialize();
+        if (m_tray->Initialize()) {
+            LogDebug(L"Tray icon initialized.");
+        } else {
+            LogDebug(L"Tray icon initialization failed.");
+        }
 
         m_settingsDlg = std::make_unique<SettingsDialog>(m_hInstance, m_hWnd, m_settings, *m_popup);
 
@@ -103,17 +123,28 @@ public:
         RegisterHotkeys();
 
         // Start Core Audio Engine and APO Controller
+        LogDebug(L"Starting Audio Engine...");
         m_audio.Start();
         m_audio.UpdateVolume(m_settings.GetSoundLevel());
         m_audio.SetEnabled(m_settings.IsBoostEnabled());
         m_audio.SetSuperBoost(m_settings.IsCompressorEnabled());
+        LogDebug(L"Audio Engine started. Entering message loop.");
 
         // Message loop
         MSG msg;
-        while (GetMessageW(&msg, NULL, 0, 0)) {
+        BOOL bRet;
+        while ((bRet = GetMessageW(&msg, NULL, 0, 0)) != 0) {
+            if (bRet == -1) {
+                LogDebug(L"GetMessageW returned -1 (error)!");
+                break;
+            }
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
+
+        wchar_t szExit[64];
+        swprintf_s(szExit, L"Exiting message loop, wParam=%d", (int)msg.wParam);
+        LogDebug(szExit);
 
         // Cleanup
         UnregisterHotkeys();
@@ -234,6 +265,7 @@ private:
                 return 0;
 
             case ID_BOOSTER_EXIT:
+                LogDebug(L"ID_BOOSTER_EXIT received.");
                 PostQuitMessage(0);
                 return 0;
             }
@@ -241,6 +273,7 @@ private:
         }
 
         case WM_DESTROY:
+            LogDebug(L"WM_DESTROY received.");
             PostQuitMessage(0);
             return 0;
         }
