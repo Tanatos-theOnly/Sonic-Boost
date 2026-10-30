@@ -1,0 +1,20 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Windows-specific files that require CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.rc text eol=crlf
+*.manifest text eol=crlf
+
+# Source code files
+*.cpp text
+*.h text
+*.def text
+*.md text
+
+# Binary files
+*.ico binary
+*.dll binary
+*.exe binary
+*.lib binary
