@@ -17,19 +17,22 @@ public:
     void SetSuperBoost(bool superBoost);
 
     bool IsConnected() const { return m_hMapFile != NULL && m_pSharedBuf != nullptr; }
-    int GetVolume() const { return m_volumePercent; }
-    bool IsEnabled() const { return m_enabled; }
-    bool IsSuperBoost() const { return m_superBoost; }
+    int GetVolume() const { return m_volumePercent.load(); }
+    bool IsEnabled() const { return m_enabled.load(); }
+    bool IsSuperBoost() const { return m_superBoost.load(); }
 
 private:
-    bool EnablePrivilege(LPCWSTR privilegeName);
-    bool SetupSecurityAttributes(SECURITY_ATTRIBUTES& sa, PSECURITY_DESCRIPTOR& pSD);
+    bool TryConnect();
     void UpdateSharedData();
+    static DWORD WINAPI WatcherThreadProc(LPVOID lpParam);
+    void WatcherLoop();
 
     HANDLE m_hMapFile;
     void* m_pSharedBuf;
     HANDLE m_hUpdateEvent;
     HANDLE m_hCreateEvent;
+    HANDLE m_hStopEvent;
+    HANDLE m_hWatcherThread;
 
     std::atomic<int> m_volumePercent;
     std::atomic<bool> m_enabled;

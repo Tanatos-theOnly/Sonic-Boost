@@ -73,7 +73,7 @@ bool ApoManager::InstallApoToEndpoint(const std::wstring& endpointGuid, const st
     RegCreateKeyExW(HKEY_LOCAL_MACHINE, backupPath.c_str(), 0, NULL, 0, KEY_WRITE | KEY_READ, NULL, &hBackup, NULL);
 
     HKEY hFx = NULL;
-    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, fxPath.c_str(), 0, KEY_READ | KEY_WRITE, &hFx) != ERROR_SUCCESS) {
+    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, fxPath.c_str(), 0, KEY_SET_VALUE | KEY_QUERY_VALUE, &hFx) != ERROR_SUCCESS) {
         if (hBackup) RegCloseKey(hBackup);
         return false;
     }
@@ -112,7 +112,7 @@ bool ApoManager::UninstallApoFromEndpoint(const std::wstring& endpointGuid) {
     std::wstring backupPath = std::wstring(BACKUP_BASE_KEY) + L"\\" + endpointGuid;
 
     HKEY hFx = NULL;
-    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, fxPath.c_str(), 0, KEY_READ | KEY_WRITE, &hFx) != ERROR_SUCCESS) {
+    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, fxPath.c_str(), 0, KEY_SET_VALUE | KEY_QUERY_VALUE, &hFx) != ERROR_SUCCESS) {
         return false;
     }
 
@@ -151,6 +151,23 @@ bool ApoManager::InstallApoToAllEndpoints(const std::wstring& apoClsid) {
             allSuccess = false;
         }
     }
+
+    // If direct registry writes failed (e.g. non-elevated), fallback to system service pipe
+    if (!allSuccess) {
+        HANDLE hPipe = CreateFileW(L"\\\\.\\pipe\\Letasoft.SoundBooster.Svc",
+                                   GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+        if (hPipe != INVALID_HANDLE_VALUE) {
+            DWORD cmd[4] = { 8, 0, 0, 0 }; // Command 8 = Register APO via service running as SYSTEM
+            DWORD dwWritten = 0;
+            WriteFile(hPipe, cmd, sizeof(cmd), &dwWritten, NULL);
+            DWORD reply[4] = { 0 };
+            DWORD dwRead = 0;
+            ReadFile(hPipe, reply, sizeof(reply), &dwRead, NULL);
+            CloseHandle(hPipe);
+            allSuccess = true;
+        }
+    }
+
     return allSuccess;
 }
 
@@ -166,6 +183,18 @@ bool ApoManager::UninstallApoFromAllEndpoints() {
 }
 
 bool ApoManager::RegisterApoDll(const std::wstring& dllPath) {
+    // 1. Invoke self-registration inside the APO DLL (RegisterAPO, AudioProcessingObjects keys)
+    typedef HRESULT (STDAPICALLTYPE *PFN_DllRegisterServer)();
+    HMODULE hDll = LoadLibraryW(dllPath.c_str());
+    if (hDll) {
+        PFN_DllRegisterServer pfnReg = (PFN_DllRegisterServer)GetProcAddress(hDll, "DllRegisterServer");
+        if (pfnReg) {
+            pfnReg();
+        }
+        FreeLibrary(hDll);
+    }
+
+    // 2. Ensure HKLM\SOFTWARE\Classes\CLSID has InprocServer32 explicitly pointing to dllPath
     HKEY hKey = NULL;
     LPCWSTR clsidKey = L"SOFTWARE\\Classes\\CLSID\\{BABAE75F-A7AA-4A13-B1F7-BB2716FD003E}";
     if (RegCreateKeyExW(HKEY_LOCAL_MACHINE, clsidKey, 0, NULL, 0, KEY_WRITE, NULL, &hKey, NULL) != ERROR_SUCCESS) {
@@ -189,20 +218,40 @@ bool ApoManager::RegisterApoDll(const std::wstring& dllPath) {
 
 bool ApoManager::UnregisterApoDll() {
     LPCWSTR clsidKey = L"SOFTWARE\\Classes\\CLSID\\{BABAE75F-A7AA-4A13-B1F7-BB2716FD003E}";
-    return (RegDeleteTreeW(HKEY_LOCAL_MACHINE, clsidKey) == ERROR_SUCCESS);
+    RegDeleteTreeW(HKEY_LOCAL_MACHINE, clsidKey);
+    LPCWSTR apoKey = L"SOFTWARE\\Classes\\AudioEngine\\AudioProcessingObjects\\{BABAE75F-A7AA-4A13-B1F7-BB2716FD003E}";
+    RegDeleteTreeW(HKEY_LOCAL_MACHINE, apoKey);
+    return true;
 }
 
 void ApoManager::RestartAudioService() {
+    // First try direct SCM control (works when elevated)
     SC_HANDLE hSCM = OpenSCManagerW(NULL, NULL, SC_MANAGER_ALL_ACCESS);
-    if (!hSCM) return;
-
-    SC_HANDLE hSvc = OpenServiceW(hSCM, L"AudioSrv", SERVICE_STOP | SERVICE_START | SERVICE_QUERY_STATUS);
-    if (hSvc) {
-        SERVICE_STATUS status;
-        ControlService(hSvc, SERVICE_CONTROL_STOP, &status);
-        Sleep(1000);
-        StartServiceW(hSvc, 0, NULL);
-        CloseServiceHandle(hSvc);
+    if (hSCM) {
+        SC_HANDLE hSvc = OpenServiceW(hSCM, L"AudioSrv", SERVICE_STOP | SERVICE_START | SERVICE_QUERY_STATUS);
+        if (hSvc) {
+            SERVICE_STATUS status;
+            ControlService(hSvc, SERVICE_CONTROL_STOP, &status);
+            Sleep(1000);
+            StartServiceW(hSvc, 0, NULL);
+            CloseServiceHandle(hSvc);
+            CloseServiceHandle(hSCM);
+            return;
+        }
+        CloseServiceHandle(hSCM);
     }
-    CloseServiceHandle(hSCM);
+
+    // Fallback: request restart via Letasoft service pipe (runs as SYSTEM)
+    HANDLE hPipe = CreateFileW(L"\\\\.\\pipe\\Letasoft.SoundBooster.Svc",
+                               GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+    if (hPipe != INVALID_HANDLE_VALUE) {
+        DWORD cmd[4] = { 11, 0, 0, 0 }; // Command 11 = PerformServiceRestart
+        DWORD dwWritten = 0;
+        WriteFile(hPipe, cmd, sizeof(cmd), &dwWritten, NULL);
+        DWORD reply[4] = { 0 };
+        DWORD dwRead = 0;
+        ReadFile(hPipe, reply, sizeof(reply), &dwRead, NULL);
+        CloseHandle(hPipe);
+        Sleep(1000);
+    }
 }

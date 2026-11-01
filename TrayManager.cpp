@@ -25,14 +25,31 @@ bool TrayManager::Initialize() {
     m_nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
     m_nid.uCallbackMessage = WM_TRAYICON_NOTIFY;
 
-    HICON hIcon = LoadIconW(m_hInstance, MAKEINTRESOURCEW(IDI_APP_ICON));
+    HICON hIcon = (HICON)LoadImageW(m_hInstance, MAKEINTRESOURCEW(IDI_APP_ICON),
+                                   IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON),
+                                   LR_DEFAULTCOLOR);
+    if (!hIcon) {
+        hIcon = LoadIconW(m_hInstance, MAKEINTRESOURCEW(IDI_APP_ICON));
+    }
     if (!hIcon) {
         hIcon = LoadIcon(NULL, IDI_APPLICATION);
     }
     m_nid.hIcon = hIcon;
     wcscpy_s(m_nid.szTip, L"SonicBoost");
 
-    if (!Shell_NotifyIconW(NIM_ADD, &m_nid)) {
+    // Remove any ghost icon from previous abnormal termination
+    Shell_NotifyIconW(NIM_DELETE, &m_nid);
+
+    BOOL bAdded = FALSE;
+    for (int retry = 0; retry < 5; ++retry) {
+        if (Shell_NotifyIconW(NIM_ADD, &m_nid)) {
+            bAdded = TRUE;
+            break;
+        }
+        Sleep(100);
+    }
+
+    if (!bAdded) {
         return false;
     }
 
@@ -72,11 +89,11 @@ void TrayManager::ShowContextMenu() {
 
     // Submenu: Boost Mode
     HMENU hSubMenu = CreatePopupMenu();
-    AppendMenuW(hSubMenu, MF_STRING | (m_settings.GetBoostMethod() == 0 ? MF_CHECKED : MF_UNCHECKED),
-                ID_BOOST_METHOD_HOOK, L"Injection");
     AppendMenuW(hSubMenu, MF_STRING | (m_settings.GetBoostMethod() == 1 ? MF_CHECKED : MF_UNCHECKED),
-                ID_BOOST_METHOD_HOOK_APO, L"Injection and APO effect");
+                ID_BOOST_METHOD_HOOK, L"Injection");
     AppendMenuW(hSubMenu, MF_STRING | (m_settings.GetBoostMethod() == 2 ? MF_CHECKED : MF_UNCHECKED),
+                ID_BOOST_METHOD_HOOK_APO, L"Injection and APO effect");
+    AppendMenuW(hSubMenu, MF_STRING | (m_settings.GetBoostMethod() == 3 ? MF_CHECKED : MF_UNCHECKED),
                 ID_BOOST_METHOD_APO, L"APO effect");
     AppendMenuW(hSubMenu, MF_SEPARATOR, 0, NULL);
     AppendMenuW(hSubMenu, MF_STRING | (m_settings.IsCompressorEnabled() ? MF_CHECKED : MF_UNCHECKED),
@@ -100,16 +117,10 @@ void TrayManager::OnTrayNotification(LPARAM lParam) {
     case WM_LBUTTONUP: {
         POINT pt;
         GetCursorPos(&pt);
-        if (m_popup.IsVisible()) {
-            m_popup.Hide();
-        } else {
-            m_popup.Show(pt);
-        }
+        m_popup.Show(pt);
         break;
     }
-
     case WM_RBUTTONUP:
-    case WM_CONTEXTMENU:
         ShowContextMenu();
         break;
     }

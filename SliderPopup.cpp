@@ -94,9 +94,11 @@ void SliderPopup::UpdateSliderFromSettings() {
     int level = m_settings.GetSoundLevel();
     SendMessageW(m_hSlider, TBM_SETPOS, TRUE, (LPARAM)-level);
     SendMessageW(m_hChkEnable, BM_SETCHECK, m_settings.IsBoostEnabled() ? BST_CHECKED : BST_UNCHECKED, 0);
-    m_audio.UpdateVolume(level);
-    m_audio.SetEnabled(m_settings.IsBoostEnabled());
-    m_audio.SetSuperBoost(m_settings.IsCompressorEnabled());
+    if (m_audio.IsRunning()) {
+        m_audio.UpdateVolume(level);
+        m_audio.SetEnabled(m_settings.IsBoostEnabled());
+        m_audio.SetSuperBoost(m_settings.IsCompressorEnabled());
+    }
 }
 
 void SliderPopup::PositionNearTray(const POINT& ptTray) {
@@ -121,8 +123,10 @@ void SliderPopup::PositionNearTray(const POINT& ptTray) {
 }
 
 void SliderPopup::Show(const POINT& ptTray) {
+    UpdateSliderFromSettings();
     PositionNearTray(ptTray);
     ShowWindow(m_hWnd, SW_SHOW);
+    SetWindowPos(m_hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
     SetForegroundWindow(m_hWnd);
     SetFocus(m_hSlider);
 }

@@ -24,16 +24,32 @@
 #define HOTKEY_DEC_ID 9002
 
 static const wchar_t* MAIN_WND_CLASS = L"SonicBoostMainWindowClass";
-static const wchar_t* MUTEX_NAME = L"Global\\SonicBoost.InstanceMutex";
+static const wchar_t* MUTEX_NAME = L"Local\\SonicBoost.InstanceMutex";
 
 static void LogDebug(const wchar_t* msg) {
-    FILE* f = _wfopen(L"sonicboost.log", L"a, ccs=UTF-8");
+    FILE* f = _wfopen(L"C:\\Users\\Public\\sonicboost.log", L"a, ccs=UTF-8");
     if (f) {
         SYSTEMTIME st;
         GetLocalTime(&st);
         fwprintf(f, L"[%02d:%02d:%02d.%03d] %s\n", st.wHour, st.wMinute, st.wSecond, st.wMilliseconds, msg);
+        fflush(f);
         fclose(f);
     }
+}
+
+static LONG WINAPI CrashHandler(EXCEPTION_POINTERS* pExceptionInfo) {
+    FILE* f = _wfopen(L"C:\\Users\\Public\\sonicboost.log", L"a, ccs=UTF-8");
+    if (f) {
+        SYSTEMTIME st;
+        GetLocalTime(&st);
+        fwprintf(f, L"[%02d:%02d:%02d.%03d] [CRASH] Exception Code: 0x%08X at Address: 0x%p\n",
+                 st.wHour, st.wMinute, st.wSecond, st.wMilliseconds,
+                 pExceptionInfo->ExceptionRecord->ExceptionCode,
+                 pExceptionInfo->ExceptionRecord->ExceptionAddress);
+        fflush(f);
+        fclose(f);
+    }
+    return EXCEPTION_CONTINUE_SEARCH;
 }
 
 
@@ -51,6 +67,20 @@ public:
 
     int Run() {
         LogDebug(L"Application starting...");
+
+        // Ensure the main thread is attached to the user's interactive "Default" desktop
+        HDESK hDefault = OpenDesktopW(L"Default", 0, FALSE,
+            DESKTOP_CREATEMENU | DESKTOP_CREATEWINDOW | DESKTOP_ENUMERATE |
+            DESKTOP_HOOKCONTROL | DESKTOP_JOURNALPLAYBACK | DESKTOP_JOURNALRECORD |
+            DESKTOP_READOBJECTS | DESKTOP_SWITCHDESKTOP | DESKTOP_WRITEOBJECTS);
+        if (hDefault) {
+            if (SetThreadDesktop(hDefault)) {
+                LogDebug(L"Successfully attached to user's interactive Default desktop.");
+            } else {
+                LogDebug(L"SetThreadDesktop failed.");
+            }
+        }
+
         CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
 
         // Ensure working directory is the application directory
@@ -106,29 +136,54 @@ public:
 
         LogDebug(L"Controller window created successfully.");
 
-        // Create UI components
-        m_popup = std::make_unique<SliderPopup>(m_hInstance, m_settings, m_audio);
-        m_popup->Create();
+        try {
+            LogDebug(L"Creating SliderPopup...");
+            m_popup = std::make_unique<SliderPopup>(m_hInstance, m_settings, m_audio);
+            m_popup->Create();
+            LogDebug(L"SliderPopup created.");
 
-        m_tray = std::make_unique<TrayManager>(m_hWnd, m_hInstance, m_settings, *m_popup);
-        if (m_tray->Initialize()) {
-            LogDebug(L"Tray icon initialized.");
-        } else {
-            LogDebug(L"Tray icon initialization failed.");
+            LogDebug(L"Initializing TrayManager...");
+            m_tray = std::make_unique<TrayManager>(m_hWnd, m_hInstance, m_settings, *m_popup);
+            if (m_tray->Initialize()) {
+                LogDebug(L"Tray icon initialized.");
+            } else {
+                LogDebug(L"Tray icon initialization failed.");
+            }
+
+            LogDebug(L"Initializing SettingsDialog...");
+            m_settingsDlg = std::make_unique<SettingsDialog>(m_hInstance, m_hWnd, m_settings, *m_popup);
+
+            // Register Global Hotkeys
+            LogDebug(L"Registering hotkeys...");
+            RegisterHotkeys();
+
+            // Start Core Audio Engine and Hook Engine passing our top-level window handle
+            LogDebug(L"Starting Audio Engine...");
+            m_audio.SetBoostMethod(m_settings.GetBoostMethod());
+            m_audio.Start(m_hWnd);
+            m_audio.UpdateVolume(m_settings.GetSoundLevel());
+            m_audio.SetEnabled(m_settings.IsBoostEnabled());
+            m_audio.SetSuperBoost(m_settings.IsCompressorEnabled());
+            LogDebug(L"Audio Engine started. Entering message loop.");
+
+            // Display the volume slider popup immediately on startup on the user's desktop
+            RECT rcWork = { 0 };
+            SystemParametersInfoW(SPI_GETWORKAREA, 0, &rcWork, 0);
+            POINT ptStartup;
+            ptStartup.x = rcWork.right - 80;
+            ptStartup.y = rcWork.bottom - 10;
+            if (m_popup) {
+                m_popup->Show(ptStartup);
+            }
+        } catch (const std::exception& e) {
+            wchar_t szErr[256];
+            swprintf_s(szErr, L"Exception in initialization: %S", e.what());
+            LogDebug(szErr);
+            return 1;
+        } catch (...) {
+            LogDebug(L"Unknown exception during initialization!");
+            return 1;
         }
-
-        m_settingsDlg = std::make_unique<SettingsDialog>(m_hInstance, m_hWnd, m_settings, *m_popup);
-
-        // Register Global Hotkeys
-        RegisterHotkeys();
-
-        // Start Core Audio Engine and APO Controller
-        LogDebug(L"Starting Audio Engine...");
-        m_audio.Start();
-        m_audio.UpdateVolume(m_settings.GetSoundLevel());
-        m_audio.SetEnabled(m_settings.IsBoostEnabled());
-        m_audio.SetSuperBoost(m_settings.IsCompressorEnabled());
-        LogDebug(L"Audio Engine started. Entering message loop.");
 
         // Message loop
         MSG msg;
@@ -151,6 +206,7 @@ public:
         m_audio.Stop();
         if (m_tray) m_tray->Remove();
         CloseHandle(hMutex);
+        if (hDefault) CloseDesktop(hDefault);
 
         CoUninitialize();
         return (int)msg.wParam;
@@ -221,6 +277,12 @@ private:
             case ID_BOOSTER_SHOW: {
                 POINT pt;
                 GetCursorPos(&pt);
+                RECT rcWork = { 0 };
+                SystemParametersInfoW(SPI_GETWORKAREA, 0, &rcWork, 0);
+                if (pt.x <= 0 && pt.y <= 0) {
+                    pt.x = rcWork.right - 80;
+                    pt.y = rcWork.bottom - 10;
+                }
                 if (m_popup) m_popup->Show(pt);
                 return 0;
             }
@@ -229,18 +291,21 @@ private:
                 return 0;
 
             case ID_BOOST_METHOD_HOOK:
-                m_settings.SetBoostMethod(0);
+                m_settings.SetBoostMethod(1);
                 m_settings.Save();
+                m_audio.SetBoostMethod(1);
                 return 0;
 
             case ID_BOOST_METHOD_HOOK_APO:
-                m_settings.SetBoostMethod(1);
+                m_settings.SetBoostMethod(2);
                 m_settings.Save();
+                m_audio.SetBoostMethod(2);
                 return 0;
 
             case ID_BOOST_METHOD_APO:
-                m_settings.SetBoostMethod(2);
+                m_settings.SetBoostMethod(3);
                 m_settings.Save();
+                m_audio.SetBoostMethod(3);
                 return 0;
 
             case ID_USE_COMPRESSOR: {
@@ -293,6 +358,7 @@ private:
 };
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+    SetUnhandledExceptionFilter(CrashHandler);
     if (strstr(lpCmdLine, "/install") || strstr(lpCmdLine, "-install")) {
         WCHAR szDir[MAX_PATH];
         GetModuleFileNameW(NULL, szDir, MAX_PATH);

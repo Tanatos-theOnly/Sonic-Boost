@@ -8,7 +8,7 @@ call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliar
 
 cd /d "%~dp0"
 
-cl.exe /O2 /EHsc /std:c++17 /DUNICODE /D_UNICODE /LD /W3 ^
+cl.exe /O2 /EHsc /MT /std:c++17 /DUNICODE /D_UNICODE /D_CRT_SECURE_NO_WARNINGS /LD /W3 ^
     SoundBoosterApo.cpp ^
     dllmain.cpp ^
     /Fe:SoundBoosterApo.dll ^

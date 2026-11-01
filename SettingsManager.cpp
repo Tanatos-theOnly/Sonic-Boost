@@ -4,7 +4,7 @@
 SettingsManager::SettingsManager()
     : m_soundLevel(100),
       m_boostIsEnabled(true),
-      m_boostMethod(1),
+      m_boostMethod(3),
       m_compressorIsEnabled(false),
       m_autoHide(true),
       m_startupTip(true),
@@ -28,7 +28,7 @@ SettingsManager::~SettingsManager() {
 void SettingsManager::ResetToDefaults() {
     m_soundLevel = 100;
     m_boostIsEnabled = true;
-    m_boostMethod = 1;
+    m_boostMethod = 3;
     m_compressorIsEnabled = false;
     m_autoHide = true;
     m_startupTip = true;
@@ -65,7 +65,11 @@ void SettingsManager::Load() {
 
         dwSize = sizeof(DWORD);
         if (RegQueryValueExW(hKey, L"BoostMethod", NULL, &dwType, (LPBYTE)&dwValue, &dwSize) == ERROR_SUCCESS) {
-            m_boostMethod = (int)dwValue;
+            if (dwValue < 1 || dwValue > 3) {
+                m_boostMethod = 3; // Default to APO-only (no double-gain)
+            } else {
+                m_boostMethod = (int)dwValue;
+            }
         }
 
         dwSize = sizeof(DWORD);

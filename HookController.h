@@ -15,6 +15,8 @@ typedef int   (__fastcall *PFN_GetVolume)(void* pThis);                  // vtbl
 typedef void  (__fastcall *PFN_SetVolume)(void* pThis, int volume);      // vtbl[9]
 typedef void* (__fastcall *PFN_GetSuperBoost)(void* pThis);             // vtbl[10]
 typedef void  (__fastcall *PFN_SetSuperBoost)(void* pThis, void* param); // vtbl[11]
+typedef int   (__fastcall *PFN_GetBoostMethod)(void* pThis);             // vtbl[12]
+typedef void  (__fastcall *PFN_SetBoostMethod)(void* pThis, int method); // vtbl[13]
 
 typedef void* (__cdecl *PFN_KLHGetManager)();
 
@@ -23,22 +25,25 @@ public:
     HookController();
     ~HookController();
 
-    bool Initialize();
+    bool Initialize(HWND hWndMaster = NULL);
     void Shutdown();
 
     void SetVolume(int volumePercent);
     void SetEnabled(bool enabled);
     void SetSuperBoost(bool superBoost);
+    void SetBoostMethod(int boostMethod);
 
     bool IsActive() const { return m_pManager != nullptr; }
     int  GetVolume() const { return m_volumePercent.load(); }
+    int  GetBoostMethod() const { return m_boostMethod.load(); }
     bool IsHookInstalled() const;
 
 private:
-    void EnsureSharedMemory(int volumePercent, bool enabled, bool superBoost);
+    void EnsureSharedMemory(int volumePercent, bool enabled, bool superBoost, int boostMethod = 2);
 
     HMODULE m_hModule;
     void* m_pManager;
+    HWND m_hWndMaster;
 
     PFN_InitWindow      m_pfnInitWindow;      // vtbl[1]
     PFN_DestroyWindow   m_pfnDestroyWindow;   // vtbl[2]
@@ -51,9 +56,12 @@ private:
     PFN_SetVolume       m_pfnSetVolume;       // vtbl[9]
     PFN_GetSuperBoost   m_pfnGetSuperBoost;   // vtbl[10]
     PFN_SetSuperBoost   m_pfnSetSuperBoost;   // vtbl[11]
+    PFN_GetBoostMethod  m_pfnGetBoostMethod;  // vtbl[12]
+    PFN_SetBoostMethod  m_pfnSetBoostMethod;  // vtbl[13]
 
     std::atomic<int> m_volumePercent;
     std::atomic<bool> m_enabled;
     std::atomic<bool> m_superBoost;
+    std::atomic<int> m_boostMethod;
     CRITICAL_SECTION m_cs;
 };

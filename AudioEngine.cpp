@@ -49,6 +49,10 @@ AudioEngine::AudioEngine(DspEngine& dsp, ApoController& apo)
       m_apo(apo),
       m_hook(),
       m_running(false),
+      m_volumePercent(100),
+      m_enabled(true),
+      m_superBoost(false),
+      m_boostMethod(3),
       m_pEnumerator(nullptr),
       m_pNotificationClient(nullptr)
 {
@@ -58,9 +62,9 @@ AudioEngine::~AudioEngine() {
     Stop();
 }
 
-bool AudioEngine::Start() {
+bool AudioEngine::Start(HWND hWndMaster) {
     // 1. Initialize Injection Hook Engine (SBH64) for in-application audio interception
-    m_hook.Initialize();
+    m_hook.Initialize(hWndMaster);
 
     // 2. Initialize Core Audio APO communication
     m_apo.Initialize();
@@ -74,6 +78,7 @@ bool AudioEngine::Start() {
     }
 
     m_running = true;
+    ApplySettings();
     return true;
 }
 
@@ -96,24 +101,64 @@ void AudioEngine::Stop() {
 }
 
 void AudioEngine::OnDefaultDeviceChanged() {
-    m_hook.SetVolume(m_hook.GetVolume());
-    m_apo.SetVolume(m_apo.GetVolume());
+    ApplySettings();
+}
+
+void AudioEngine::ApplySettings() {
+    if (!m_running.load()) return;
+
+    int method = m_boostMethod.load();
+    int vol = m_volumePercent.load();
+    bool en = m_enabled.load();
+    bool super = m_superBoost.load();
+
+    m_dsp.SetVolume(vol);
+    m_dsp.SetEnabled(en);
+    m_dsp.SetSuperBoost(super);
+
+    if (method == 1) { // 1 = Injection only
+        m_hook.SetBoostMethod(1);
+        m_hook.SetEnabled(en);
+        m_hook.SetVolume(vol);
+        m_hook.SetSuperBoost(super);
+
+        m_apo.SetEnabled(false);
+        m_apo.SetVolume(100);
+    } else if (method == 2) { // 2 = Injection and APO effect (Dual Engine)
+        m_hook.SetBoostMethod(2);
+        m_hook.SetEnabled(en);
+        m_hook.SetVolume(vol);
+        m_hook.SetSuperBoost(super);
+
+        m_apo.SetEnabled(en);
+        m_apo.SetVolume(vol);
+        m_apo.SetSuperBoost(super);
+    } else if (method == 3) { // 3 = APO effect only
+        m_hook.SetEnabled(false);
+        m_hook.SetVolume(100);
+
+        m_apo.SetEnabled(en);
+        m_apo.SetVolume(vol);
+        m_apo.SetSuperBoost(super);
+    }
 }
 
 void AudioEngine::UpdateVolume(int volumePercent) {
-    m_dsp.SetVolume(volumePercent);
-    m_apo.SetVolume(volumePercent);
-    m_hook.SetVolume(volumePercent);
+    m_volumePercent = volumePercent;
+    ApplySettings();
 }
 
 void AudioEngine::SetEnabled(bool enabled) {
-    m_dsp.SetEnabled(enabled);
-    m_apo.SetEnabled(enabled);
-    m_hook.SetEnabled(enabled);
+    m_enabled = enabled;
+    ApplySettings();
 }
 
 void AudioEngine::SetSuperBoost(bool enabled) {
-    m_dsp.SetSuperBoost(enabled);
-    m_apo.SetSuperBoost(enabled);
-    m_hook.SetSuperBoost(enabled);
+    m_superBoost = enabled;
+    ApplySettings();
+}
+
+void AudioEngine::SetBoostMethod(int boostMethod) {
+    m_boostMethod = boostMethod;
+    ApplySettings();
 }

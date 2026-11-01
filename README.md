@@ -4,46 +4,67 @@
   <img src="SonicBoost.ico" width="128" height="128" alt="SonicBoost Icon" />
 </p>
 
+<h3 align="center">SonicBoost — Next-Generation System-Wide Windows Audio Amplifier</h3>
+
 <p align="center">
-  <strong>Next-Generation System-Wide Windows Audio Amplifier</strong><br/>
-  <em>Elevating PC Volume Beyond Hardware Limits up to 500% (+20 dB) with Studio-Grade Dynamic Limiting</em>
+  <em>Elevating PC volume beyond standard hardware limitations up to 500% (+14 dB) with studio-grade dynamic limiting and native Windows Audio Processing Objects (APO).</em>
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
-  <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011%20(x64)-0078D6.svg?logo=windows" alt="Platform: Windows" />
-  <img src="https://img.shields.io/badge/C%2B%2B-17-00599C.svg?logo=c%2B%2B" alt="C++17" />
-  <img src="https://img.shields.io/badge/architecture-Dual--Engine%20(Hook%20%2B%20APO)-orange.svg" alt="Dual-Engine Audio" />
-  <img src="https://img.shields.io/badge/max%20amplification-500%25%20(%2B20%20dB)-red.svg" alt="Amplification: 500%" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=for-the-badge" alt="License: MIT" /></a>
+  <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011%20(x64)-0078D6.svg?style=for-the-badge&logo=windows" alt="Platform: Windows" />
+  <img src="https://img.shields.io/badge/C%2B%2B-17-00599C.svg?style=for-the-badge&logo=c%2B%2B" alt="C++17" />
+  <img src="https://img.shields.io/badge/architecture-Native%20Windows%20APO-orange.svg?style=for-the-badge" alt="Native Windows APO" />
+  <img src="https://img.shields.io/badge/amplification-Up%20to%20500%25%20(%2B14%20dB)-red.svg?style=for-the-badge" alt="Amplification: 500%" />
+  <a href="https://buymeacoffee.com/rohanslappi"><img src="https://img.shields.io/badge/Buy%20Me%20A%20Coffee-rohanslappi-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me A Coffee" /></a>
 </p>
+
+---
+
+## 📖 Table of Contents
+
+- [🌟 Overview](#-overview)
+- [✨ Key Features](#-key-features)
+- [🏗️ System Architecture](#️-system-architecture)
+- [📁 Repository Structure](#-repository-structure)
+- [🚀 Quick Start & Installation](#-quick-start--installation)
+- [⌨️ Keyboard Shortcuts](#️-keyboard-shortcuts)
+- [🛠️ Building from Source](#️-building-from-source)
+- [🌐 Universal Hardware Compatibility](#-universal-hardware-compatibility)
+- [⚙️ Configuration & Registry](#️-configuration--registry)
+- [👤 Author & Credits](#-author--credits)
+- [☕ Support the Project](#-support-the-project)
+- [📄 License](#-license)
 
 ---
 
 ## 🌟 Overview
 
-**SonicBoost** is a high-performance, system-wide audio amplifier engineered for Microsoft Windows. Designed and developed by **Reddy A. Rohan on earth**, SonicBoost breaks through standard $100\%$ hardware limitations to deliver up to **$500\%$ ($+20\text{ dB}$)** sound amplification across all applications, games, and web streams.
+**SonicBoost** is a high-performance, system-wide audio amplification utility engineered specifically for Microsoft Windows. Designed and developed by **Reddy A. Rohan on earth**, SonicBoost breaks through standard 100% hardware volume barriers to deliver up to **500% (+14 dB)** clean sound amplification across all applications, video players, browsers, and games.
 
-Unlike traditional software boosters that cause severe acoustic clipping and digital distortion, SonicBoost incorporates real-time **SuperBoost soft-knee saturation and peak limiting** alongside a **Dual-Engine Audio Core** to maintain crystal-clear audio fidelity at peak volumes.
+Unlike generic virtual audio drivers that introduce latency and audio-video desync, SonicBoost integrates directly into the native Windows Audio Graph (`audiodg.exe`) using a custom **Windows Audio Processing Object (APO)**. Together with dynamic soft-knee peak limiting, it guarantees zero latency and crystal-clear audio fidelity without digital clipping.
 
 ---
 
 ## ✨ Key Features
 
-* **⚡ Dual-Engine Audio Architecture**:
-  * **In-Process Interception Engine (`SBH64.dll` / `SBH.dll`)**: Intercepts raw PCM render buffers (`IAudioRenderClient::ReleaseBuffer`, `IDirectSoundBuffer::Unlock`, and `waveOutWrite`) directly in user-space processes (Chrome, Spotify, Edge, Discord, VLC, games, etc.) prior to audio mixing. Works instantly on any sound device without requiring driver modifications.
-  * **Core Audio APO Engine (`SoundBoosterApo.dll`)**: High-fidelity Windows Audio Processing Object registered into the Windows Audio Graph (`audiodg.exe`) right before DAC transmission.
+* **⚡ Native Windows Audio Processing Object (APO)**:
+  * Operates directly inside the Windows Protected Audio Engine (`audiodg.exe`) right before digital-to-analog conversion.
+  * Real-time 32-bit floating-point buffer processing with sub-millisecond latency.
 * **🛡️ SuperBoost Soft-Knee Saturation**:
-  * Dynamic non-linear limiting (`Filters\limit.dll`) prevents harsh digital clipping and harmonic distortion when pushing high-amplitude audio up to 500%.
-* **💎 Liquid & Minimalist Interface**:
-  * Liquid glassmorphic notification tray icon with live status reporting.
-  * Precision vertical volume slider ($100\%$ to $500\%$) featuring mouse-wheel sensitivity and dynamic tracking tooltips.
-  * Smooth auto-hide popup behavior for seamless background operation.
+  * Real-time dynamic range limiting prevents harsh acoustic clipping and digital distortion when pushing high-amplitude audio up to 500%.
+* **🌐 100% Universal Compatibility**:
+  * Statically compiled with the C/C++ Runtime (`/MT`)—zero external dependencies or Visual C++ Redistributable requirements.
+  * Dynamically enumerates all audio render endpoints on your computer: laptop speakers, Realtek/Conexant chips, USB DACs, Bluetooth headphones, and HDMI audio.
+* **🔄 Adaptive Device Handover**:
+  * Employs `IMMNotificationClient` event listeners to seamlessly transition audio amplification when plugging in headphones or connecting Bluetooth devices without restarting the app.
+* **💎 Liquid Minimalist Interface**:
+  * Sleek taskbar notification tray icon with live status reporting.
+  * Precision vertical volume slider (100% to 500%) with mouse-wheel tracking and auto-dismiss behavior.
 * **⌨️ Global Background Hotkeys**:
-  * Adjust system volume on the fly from within full-screen games or video players using `Ctrl + Alt + F10` (Boost) and `Ctrl + Alt + F9` (Reduce).
-* **🔄 Dynamic Endpoint Switching**:
-  * Listens to `IMMNotificationClient` hardware events to adaptively handle headphone connections, Bluetooth headsets, and external sound cards.
-* **🔓 Permanently Unlocked**:
-  * 100% free and open-source. No trial timeouts, no paywalls, no background telemetry.
+  * Adjust volume instantly from within full-screen games or video players using customizable global hotkeys (`Ctrl + Alt + F10` / `Ctrl + Alt + F9`).
+* **🔓 100% Free & Open-Source**:
+  * No licensing servers, no background telemetry, no timeouts, and no paywalls.
 
 ---
 
@@ -51,25 +72,26 @@ Unlike traditional software boosters that cause severe acoustic clipping and dig
 
 ```mermaid
 graph TD
-    UI["SonicBoost.exe (Main UI & Tray Controller)<br/>[asInvoker - Non-Elevated]"]
+    UI["SonicBoost.exe (User UI & Tray Controller)<br/>[Medium Integrity - Standard User]"]
     
-    ENGINE1["Audio Interception Engine (SBH64.dll / SBH.dll)<br/>[User Space - Multi-Process]"]
-    ENGINE2["System APO Engine (SoundBoosterApo.dll)<br/>[audiodg.exe - Audio Graph]"]
+    SHARED_MEM["Shared Memory: Global\\SbapoConfigData<br/>[Low Mandatory Integrity SDDL]"]
+    EVENT_UPDATE["Event: Global\\SbapoDataUpdate"]
     
-    LIMITER["SuperBoost Limiter (Filters\\limit.dll)<br/>Soft-Knee Peak Saturation"]
+    AUDIODG["Windows Audio Engine (audiodg.exe)<br/>[Session 0 - Protected Audio Graph]"]
+    APO["SoundBoosterApo.dll<br/>(CBaseAudioProcessingObject)"]
     
-    APPS["Active Desktop Apps<br/>(Chrome, Spotify, Edge, Discord, Media Players)"]
-    AUDIODG["Windows Audio Engine (audiodg.exe)"]
-    DAC["Hardware Audio Endpoint (Speakers / Headphones)"]
+    APPS["Active Desktop Apps<br/>(Chrome, Spotify, VLC, Discord, Games)"]
+    DAC["Hardware Audio Endpoints<br/>(Speakers, USB DAC, Bluetooth, HDMI)"]
     
-    UI -->|Hook Controller| ENGINE1
-    UI -->|Shared Memory: Global\\SbapoConfigData| ENGINE2
+    UI -->|Write Gain & Settings| SHARED_MEM
+    UI -->|Signal Change| EVENT_UPDATE
     
-    ENGINE1 -->|IAudioRenderClient::ReleaseBuffer Detour| APPS
-    ENGINE1 -->|Peak Protection| LIMITER
+    EVENT_UPDATE -.->|Awaken APO Thread| APO
+    SHARED_MEM -.->|Read Real-Time Gain| APO
     
-    APPS -->|Scaled PCM Stream| AUDIODG
-    ENGINE2 -->|Audio Graph Processing| AUDIODG
+    APPS -->|PCM Audio Streams| AUDIODG
+    AUDIODG --> APO
+    APO -->|Amplified & Peak-Limited 32-bit Float Audio| AUDIODG
     AUDIODG --> DAC
 ```
 
@@ -84,29 +106,29 @@ SonicBoost/
 │   ├── SoundBoosterApo.cpp        # Real-time DSP audio processor & config synchronization
 │   ├── dllmain.cpp                # COM ClassFactory, DllRegisterServer, DllUnregisterServer
 │   ├── SoundBoosterApo.def        # Linker export definitions
-│   └── build_apo.bat              # Standalone 64-bit APO compilation script
+│   └── build_apo.bat              # 64-bit APO compilation script (/MT static runtime)
 ├── Filters/                       # DSP filter libraries
 │   ├── gain.dll                   # High-precision linear gain DSP
 │   └── limit.dll                  # SuperBoost soft-saturation peak limiter
-├── SBH64.dll                      # 64-bit In-Process Audio Interception Engine
-├── SBH.dll                        # 32-bit In-Process Audio Interception Engine
+├── SBH64.dll                      # 64-bit In-Process Interception Engine
+├── SBH.dll                        # 32-bit In-Process Interception Engine
 ├── ApoController.h / .cpp         # IPC controller managing shared memory (Global\SbapoConfigData)
 ├── ApoManager.h / .cpp            # Windows Core Audio endpoint enumerator & registry manager
-├── AudioEngine.h / .cpp           # Dual-engine orchestrator & IMMNotificationClient listener
+├── AudioEngine.h / .cpp           # Orchestrator & IMMNotificationClient hardware event listener
 ├── DspEngine.h / .cpp             # Mathematical DSP operations: gain scaling & limiting
-├── HookController.h / .cpp        # High-performance dispatch controller for injection engine
+├── HookController.h / .cpp        # Injection engine dispatch controller
 ├── SettingsManager.h / .cpp       # Registry options persistence (HKCU\Software\SonicBoost\Options)
 ├── SettingsDialog.h / .cpp        # Settings dialog (autostart, hotkeys, startup volume)
 ├── SliderPopup.h / .cpp           # Fluid volume slider popup with live tooltip & auto-dismiss
 ├── TrayManager.h / .cpp           # System notification tray icon & context menu
 ├── resource.h / resource.rc       # Embedded resource definitions & icon mapping
-├── SonicBoost.ico                 # Multi-resolution liquid glassmorphic application icon
+├── SonicBoost.ico                 # Multi-resolution application icon
 ├── app.manifest                   # ComCtl32 v6 visual styling & asInvoker security manifest
 ├── main.cpp                       # WinMain entry point, single-instance mutex, and message pump
-├── build.bat                      # Master MSVC build script (compiles EXE and APO DLL)
+├── build.bat                      # Master MSVC build script (compiles EXE and APO DLL with /MT)
 ├── clean.bat                      # Wipes intermediate compiler and linker objects
-├── register_apo.bat               # Installs and enables the APO across all active endpoints
-├── unregister_apo.bat             # Restores default audio endpoints and unregisters APO
+├── register_apo.bat               # One-time elevated script to register the APO across all endpoints
+├── unregister_apo.bat             # Cleanly restores default audio endpoints and unregisters APO
 ├── CONTRIBUTING.md                # Community contribution guidelines
 ├── LICENSE                        # MIT Open-Source License
 └── README.md                      # Project documentation and specifications
@@ -114,22 +136,34 @@ SonicBoost/
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick Start & Installation
 
-### Running SonicBoost
+### Step 1: One-Time APO Registration
+1. Download or copy the project files to your desired folder.
+2. Double-click `register_apo.bat`.
+   * *The script will automatically request Administrator privileges via Windows UAC.*
+   * *It registers the APO COM server, dynamically binds it to all active sound cards and audio endpoints, and refreshes the Windows Audio Service.*
+
+### Step 2: Run SonicBoost
 1. Launch `SonicBoost.exe`.
-2. Click the **SonicBoost** liquid glass icon in the Windows taskbar system tray.
-3. Drag the slider to your desired amplification level (up to **500%**).
-4. Right-click the tray icon to access **Settings**, toggle **SuperBoost**, or select your preferred **Boost Mode**.
+   * *Runs as a standard, lightweight user application without requiring admin rights.*
+2. Click the **SonicBoost** icon in the Windows taskbar system tray.
+3. Drag the slider to boost your audio up to **500%**.
+4. Right-click the tray icon to access **Settings**, toggle **SuperBoost**, or select preferred boost modes.
 
-### Hotkeys
+### Step 3: Uninstallation (Optional)
+* To cleanly remove the APO and restore all audio endpoints to their exact factory defaults, double-click `unregister_apo.bat`.
+
+---
+
+## ⌨️ Keyboard Shortcuts
 
 | Shortcut | Action | Description |
 | :--- | :--- | :--- |
 | `Ctrl + Alt + F10` | Volume Up | Increases audio amplification by step |
 | `Ctrl + Alt + F9` | Volume Down | Decreases audio amplification by step |
-| Left-Click Tray | Toggle Slider | Shows / hides fluid vertical volume slider |
-| Right-Click Tray | Context Menu | Opens Settings, Boost Modes, and Exit |
+| Left-Click Tray | Toggle Slider | Shows / hides vertical precision volume slider |
+| Right-Click Tray | Context Menu | Accesses Settings, Boost Modes, and Exit |
 
 ---
 
@@ -142,20 +176,32 @@ SonicBoost/
   * *Windows 10/11 SDK*
 
 ### Build Steps
-
-1. Open **Developer Command Prompt for VS 2022** (or standard Command Prompt / PowerShell).
-2. Navigate to the project directory:
+1. Open the **Developer Command Prompt for VS 2022**.
+2. Navigate to the project root directory:
    ```cmd
-   cd D:\Tools\projects\SonicBoost
+   cd SonicBoost
    ```
-3. Run the automated build script:
+3. Run the master build script:
    ```cmd
    build.bat
    ```
-4. To clean intermediate files at any time:
+4. To clean intermediate compilation files at any time:
    ```cmd
    clean.bat
    ```
+
+---
+
+## 🌐 Universal Hardware Compatibility
+
+SonicBoost is designed to be completely universal. Because both `SonicBoost.exe` and `SoundBoosterApo.dll` are compiled statically using `/MT`, they run on any vanilla Windows 10/11 x64 PC without missing DLL errors.
+
+| Audio Category | Supported Hardware Examples | Status |
+| :--- | :--- | :--- |
+| **Integrated Motherboard Audio** | Realtek High Definition, Conexant, Intel SST, AMD Audio | ✅ Fully Supported |
+| **USB DACs & Audio Interfaces** | Focusrite Scarlett, Schiit, SteelSeries, HyperX, Creative | ✅ Fully Supported |
+| **Wireless & Bluetooth Audio** | Sony WH/WF series, Apple AirPods, Bose QC, Galaxy Buds | ✅ Fully Supported |
+| **Display Audio** | HDMI / DisplayPort Monitors and TVs, NVIDIA / AMD Audio | ✅ Fully Supported |
 
 ---
 
@@ -165,20 +211,14 @@ Settings are persisted in the Windows Registry under `HKCU\Software\SonicBoost\O
 
 | Key | Type | Description |
 | :--- | :--- | :--- |
-| `SoundLevel` | `DWORD` | Amplification level percentage ($100$ to $500$) |
-| `BoostIsEnabled` | `DWORD` | Master toggle ($1$ = active, $0$ = bypassed) |
-| `BoostMethod` | `DWORD` | $0$ = In-Process Interception, $1$ = Dual Engine, $2$ = APO |
-| `CompressorIsEnabled` | `DWORD` | $1$ = SuperBoost Limiter active, $0$ = Linear Gain |
-| `AutoHide` | `DWORD` | $1$ = Automatically dismiss slider on focus loss |
-| `StartupTip` | `DWORD` | $1$ = Show tray balloon notification upon launch |
-| `AppAutoStart` | `DWORD` | $1$ = Automatically launch at Windows login |
+| `SoundLevel` | `DWORD` | Amplification level percentage (100 to 500) |
+| `BoostIsEnabled` | `DWORD` | Master toggle (1 = active, 0 = bypassed) |
+| `BoostMethod` | `DWORD` | 1 = In-Process Hook, 2 = Dual Engine, 3 = Native APO |
+| `CompressorIsEnabled` | `DWORD` | 1 = SuperBoost Limiter active, 0 = Linear Gain |
+| `AutoHide` | `DWORD` | 1 = Automatically dismiss slider on focus loss |
+| `StartupTip` | `DWORD` | 1 = Show tray balloon notification upon launch |
+| `AppAutoStart` | `DWORD` | 1 = Automatically launch on Windows startup |
 | `AppHotKeys` | `BINARY` | Custom keyboard hotkey binding assignments |
-
----
-
-## 📄 License
-
-This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
 
 ---
 
@@ -186,3 +226,24 @@ This project is licensed under the **MIT License** — see the [LICENSE](LICENSE
 
 * **Lead Architect & Developer**: **Reddy A. Rohan on earth**
 * **Project**: **SonicBoost**
+
+---
+
+## ☕ Support the Project
+
+If SonicBoost made your PC audio louder, clearer, and better, consider buying a coffee to support continued development and updates!
+
+<p align="center">
+  <a href="https://buymeacoffee.com/rohanslappi" target="_blank">
+    <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" width="220" />
+  </a>
+</p>
+<p align="center">
+  👉 <strong><a href="https://buymeacoffee.com/rohanslappi">buymeacoffee.com/rohanslappi</a></strong>
+</p>
+
+---
+
+## 📄 License
+
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.

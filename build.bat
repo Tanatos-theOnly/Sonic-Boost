@@ -16,9 +16,10 @@ cd ..
 
 echo.
 echo [2/2] Building SonicBoost.exe...
+if exist SonicBoost.exe del /f /q SonicBoost.exe
 rc.exe resource.rc
 
-cl.exe /O2 /EHsc /std:c++17 /DUNICODE /D_UNICODE /W3 ^
+cl.exe /O2 /EHsc /MT /std:c++17 /DUNICODE /D_UNICODE /D_CRT_SECURE_NO_WARNINGS /W3 ^
     main.cpp ^
     SettingsManager.cpp ^
     DspEngine.cpp ^
