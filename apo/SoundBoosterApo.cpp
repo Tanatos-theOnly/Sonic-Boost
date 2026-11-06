@@ -267,6 +267,18 @@ STDMETHODIMP CSoundBoosterAPO::UnlockForProcess() {
     return CBaseAudioProcessingObject::UnlockForProcess();
 }
 
+static bool ReadStateFile(char* outBuf, size_t maxLen) {
+    FILE* f = fopen("C:\\Users\\Public\\sbapo_state.txt", "r");
+    if (!f) return false;
+    size_t bytes = fread(outBuf, 1, maxLen - 1, f);
+    fclose(f);
+    if (bytes > 0) {
+        outBuf[bytes] = '\0';
+        return true;
+    }
+    return false;
+}
+
 void CSoundBoosterAPO::CheckSharedConfig() {
     if (!m_hMapFile) {
         // First try to open an existing mapping (created by app-side ApoController)
@@ -287,7 +299,12 @@ void CSoundBoosterAPO::CheckSharedConfig() {
                     LogApo("Successfully created Global\\SbapoConfigData shared memory with Low-IL SDDL");
                     void* pInit = MapViewOfFile(m_hMapFile, FILE_MAP_WRITE, 0, 0, 256);
                     if (pInit) {
-                        sprintf_s((char*)pInit, 256, "# Boost: 0 dB 0\nEnableOldApo: 0\n");
+                        char state[256] = {};
+                        if (ReadStateFile(state, sizeof(state)) && state[0] != '\0') {
+                            sprintf_s((char*)pInit, 256, "%s", state);
+                        } else {
+                            sprintf_s((char*)pInit, 256, "# Boost: 0 dB 0\nEnableOldApo: 0\n");
+                        }
                         UnmapViewOfFile(pInit);
                     }
                 } else {
@@ -323,15 +340,23 @@ void CSoundBoosterAPO::CheckSharedConfig() {
         m_hUpdateEvent = OpenEventA(SYNCHRONIZE | EVENT_MODIFY_STATE, FALSE, "Global\\SbapoDataUpdate");
     }
 
-    if (m_pSharedBuf) {
+    const char* pConfig = m_pSharedBuf;
+    char fallbackState[256] = {};
+    if (!pConfig || pConfig[0] == '\0') {
+        if (ReadStateFile(fallbackState, sizeof(fallbackState))) {
+            pConfig = fallbackState;
+        }
+    }
+
+    if (pConfig) {
         // Parse config text
-        if (m_pSharedBuf[0] == '#') {
+        if (pConfig[0] == '#') {
             m_boostEnabled = false;
             m_gainFactor = 1.0f;
         } else {
             int boostDb = 0;
             int mode = 1;
-            if (sscanf_s(m_pSharedBuf, "Boost: %d dB %d", &boostDb, &mode) >= 1) {
+            if (sscanf_s(pConfig, "Boost: %d dB %d", &boostDb, &mode) >= 1) {
                 m_superBoostEnabled = (mode != 0);
                 if (boostDb <= 0) {
                     m_boostEnabled = false;

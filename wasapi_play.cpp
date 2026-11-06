@@ -6,6 +6,9 @@
 
 int main() {
     CoInitialize(NULL);
+    // Explicitly load SBH64 to test in-process hook amplification
+    HMODULE hHook = LoadLibraryW(L"SBH64.dll");
+    printf("[Test] SBH64.dll explicitly loaded: %s (0x%p)\n", hHook ? "SUCCESS" : "FAILED", hHook);
 
     IMMDeviceEnumerator* pEnumerator = NULL;
     HRESULT hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL, CLSCTX_ALL,
@@ -15,6 +18,11 @@ int main() {
     IMMDevice* pDevice = NULL;
     hr = pEnumerator->GetDefaultAudioEndpoint(eRender, eMultimedia, &pDevice);
     if (FAILED(hr)) { printf("GetDefaultAudioEndpoint failed: 0x%08X\n", hr); return 1; }
+    LPWSTR pId = NULL;
+    if (SUCCEEDED(pDevice->GetId(&pId))) {
+        wprintf(L"Default endpoint ID: %s\n", pId);
+        CoTaskMemFree(pId);
+    }
 
     IAudioClient* pAudioClient = NULL;
     hr = pDevice->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void**)&pAudioClient);
@@ -46,7 +54,19 @@ int main() {
     float phase = 0.0f;
     float phaseInc = 2.0f * 3.14159265f * 440.0f / (float)pwfx->nSamplesPerSec;
 
+    // Create a top-level desktop window so Windows dispatches global hooks
+    HWND hWndDummy = CreateWindowExW(0, L"STATIC", L"SonicBoost Test Playback", WS_OVERLAPPEDWINDOW | WS_VISIBLE, 100, 100, 300, 100, NULL, NULL, NULL, NULL);
+    ShowWindow(hWndDummy, SW_SHOW);
+    UpdateWindow(hWndDummy);
+    PostMessageW(hWndDummy, WM_USER + 1, 0, 0);
+    MSG msg;
+    PeekMessageW(&msg, NULL, 0, 0, PM_NOREMOVE);
+
     while (GetTickCount() - startTime < 1500) {
+        while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
         UINT32 numPadding = 0;
         pAudioClient->GetCurrentPadding(&numPadding);
         UINT32 numFramesAvailable = bufferFrameCount - numPadding;
@@ -83,7 +103,8 @@ int main() {
     }
 
     pAudioClient->Stop();
-    printf("WASAPI playback complete!\n");
+    HMODULE hSBH = GetModuleHandleW(L"SBH64.dll");
+    printf("WASAPI playback complete! SBH64 Hook Loaded: %s (0x%p)\n", hSBH ? "YES" : "NO", hSBH);
 
     CoTaskMemFree(pwfx);
     pRenderClient->Release();

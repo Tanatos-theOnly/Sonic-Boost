@@ -152,7 +152,7 @@ void ApoController::WatcherLoop() {
             handles[count++] = m_hCreateEvent;
         }
 
-        DWORD dwWait = WaitForMultipleObjects(count, handles, FALSE, 1000);
+        DWORD dwWait = WaitForMultipleObjects(count, handles, FALSE, 500);
         if (dwWait == WAIT_OBJECT_0) {
             // Stop event signaled: exit thread cleanly
             break;
@@ -267,22 +267,32 @@ void ApoController::UpdateSharedData() {
         TryConnect();
     }
 
+    int vol = m_volumePercent.load();
+    bool en = m_enabled.load();
+    bool super = m_superBoost.load();
+
+    char cfgStr[256] = {};
+    if (!en || vol <= 100) {
+        // Unity gain / bypass
+        sprintf_s(cfgStr, sizeof(cfgStr), "# Boost: 0 dB 0\nEnableOldApo: 0\n");
+    } else {
+        // Convert volume percentage (100% to 500%) to dB:
+        // 100% -> 0 dB, 200% -> +6 dB, 300% -> +10 dB, 400% -> +12 dB, 500% -> +14 dB
+        int boostDb = (int)(20.0 * log10((double)vol / 100.0) + 0.5);
+        if (boostDb < 1) boostDb = 1;
+        sprintf_s(cfgStr, sizeof(cfgStr), "Boost: %d dB %d\nEnableOldApo: 0\n", boostDb, super ? 1 : 0);
+    }
+
+    // Always persist state to file so cold boots and audiodg.exe restarts pick it up immediately
+    FILE* fState = fopen("C:\\Users\\Public\\sbapo_state.txt", "w");
+    if (fState) {
+        fputs(cfgStr, fState);
+        fflush(fState);
+        fclose(fState);
+    }
+
     if (m_pSharedBuf) {
-        int vol = m_volumePercent.load();
-        bool en = m_enabled.load();
-        bool super = m_superBoost.load();
-
-        if (!en || vol <= 100) {
-            // Unity gain / bypass
-            sprintf_s((char*)m_pSharedBuf, 256, "# Boost: 0 dB 0\nEnableOldApo: 0\n");
-        } else {
-            // Convert volume percentage (100% to 500%) to dB:
-            // 100% -> 0 dB, 200% -> +6 dB, 300% -> +10 dB, 400% -> +12 dB, 500% -> +14 dB
-            int boostDb = (int)(20.0 * log10((double)vol / 100.0) + 0.5);
-            if (boostDb < 1) boostDb = 1;
-            sprintf_s((char*)m_pSharedBuf, 256, "Boost: %d dB %d\nEnableOldApo: 0\n", boostDb, super ? 1 : 0);
-        }
-
+        sprintf_s((char*)m_pSharedBuf, 256, "%s", cfgStr);
         if (m_hUpdateEvent) {
             SetEvent(m_hUpdateEvent);
         }

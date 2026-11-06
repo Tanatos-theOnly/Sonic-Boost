@@ -113,6 +113,23 @@ public:
         // Load settings
         m_settings.Load();
 
+        if (m_settings.IsAutoStart()) {
+            m_settings.SetAutoStart(true);
+        }
+
+        // Ensure APO is registered and installed on audio endpoints if not already present
+        if (!ApoManager::IsApoInstalledOnAnyEndpoint()) {
+            LogDebug(L"APO not detected on any endpoint. Registering and installing...");
+            WCHAR szApoDll[MAX_PATH];
+            GetModuleFileNameW(NULL, szApoDll, MAX_PATH);
+            WCHAR* pSlashApo = wcsrchr(szApoDll, L'\\');
+            if (pSlashApo) {
+                wcscpy_s(pSlashApo + 1, MAX_PATH - (pSlashApo - szApoDll + 1), L"SoundBoosterApo.dll");
+                ApoManager::RegisterApoDll(szApoDll);
+                ApoManager::InstallApoToAllEndpoints();
+            }
+        }
+
         // Register hidden controller window
         WNDCLASSEXW wc = { 0 };
         wc.cbSize = sizeof(WNDCLASSEXW);

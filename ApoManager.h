@@ -13,6 +13,7 @@ struct AudioEndpointInfo {
 class ApoManager {
 public:
     static std::vector<AudioEndpointInfo> EnumerateEndpoints();
+    static bool IsApoInstalledOnAnyEndpoint();
     static bool InstallApoToEndpoint(const std::wstring& endpointGuid, const std::wstring& apoClsid = L"{BABAE75F-A7AA-4A13-B1F7-BB2716FD003E}");
     static bool UninstallApoFromEndpoint(const std::wstring& endpointGuid);
     static bool InstallApoToAllEndpoints(const std::wstring& apoClsid = L"{BABAE75F-A7AA-4A13-B1F7-BB2716FD003E}");

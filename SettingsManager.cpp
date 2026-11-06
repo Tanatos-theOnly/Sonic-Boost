@@ -4,11 +4,11 @@
 SettingsManager::SettingsManager()
     : m_soundLevel(100),
       m_boostIsEnabled(true),
-      m_boostMethod(3),
+      m_boostMethod(2),          // Default: Dual Engine (Hook + APO) for 100% universal app coverage
       m_compressorIsEnabled(false),
       m_autoHide(true),
       m_startupTip(true),
-      m_appAutoStart(false),
+      m_appAutoStart(true),      // Default: start on boot to persist across restarts
       m_initialVolume(0),
       m_regSubKey(L"Software\\SonicBoost\\Options")
 {
@@ -28,11 +28,11 @@ SettingsManager::~SettingsManager() {
 void SettingsManager::ResetToDefaults() {
     m_soundLevel = 100;
     m_boostIsEnabled = true;
-    m_boostMethod = 3;
+    m_boostMethod = 2; // Dual Engine default
     m_compressorIsEnabled = false;
     m_autoHide = true;
     m_startupTip = true;
-    m_appAutoStart = false;
+    m_appAutoStart = true;
     m_initialVolume = 0;
 
     m_hotkeyInc.enabled = true;
@@ -43,7 +43,7 @@ void SettingsManager::ResetToDefaults() {
     m_hotkeyDec.vkCode = VK_F9;
     m_hotkeyDec.modifiers = MOD_CONTROL | MOD_ALT;
 
-    SetAutoStart(false);
+    SetAutoStart(true);
     Save();
 }
 
@@ -66,7 +66,7 @@ void SettingsManager::Load() {
         dwSize = sizeof(DWORD);
         if (RegQueryValueExW(hKey, L"BoostMethod", NULL, &dwType, (LPBYTE)&dwValue, &dwSize) == ERROR_SUCCESS) {
             if (dwValue < 1 || dwValue > 3) {
-                m_boostMethod = 3; // Default to APO-only (no double-gain)
+                m_boostMethod = 2; // Default to Dual Engine
             } else {
                 m_boostMethod = (int)dwValue;
             }
@@ -90,6 +90,8 @@ void SettingsManager::Load() {
         dwSize = sizeof(DWORD);
         if (RegQueryValueExW(hKey, L"AppAutoStart", NULL, &dwType, (LPBYTE)&dwValue, &dwSize) == ERROR_SUCCESS) {
             m_appAutoStart = (dwValue != 0);
+        } else {
+            m_appAutoStart = true;
         }
 
         dwSize = sizeof(DWORD);
@@ -112,6 +114,10 @@ void SettingsManager::Load() {
         }
 
         RegCloseKey(hKey);
+    } else {
+        // First run on system: initialize autostart in registry
+        SetAutoStart(true);
+        Save();
     }
 
     if (m_initialVolume != 0) {

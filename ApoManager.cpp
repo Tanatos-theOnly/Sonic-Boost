@@ -1,5 +1,6 @@
 #include "ApoManager.h"
 #include <iostream>
+#include <vector>
 #include <shlwapi.h>
 
 #pragma comment(lib, "shlwapi.lib")
@@ -7,8 +8,55 @@
 static const WCHAR RENDER_BASE_KEY[] = L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\MMDevices\\Audio\\Render";
 static const WCHAR BACKUP_BASE_KEY[] = L"SOFTWARE\\SonicBoost\\OriginalEndpointEffects";
 
-static const WCHAR PKEY_FX_ENDPOINT[] = L"{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},2";
+static const WCHAR PKEY_FX_POSTMIX[] = L"{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},2";
+static const WCHAR PKEY_FX_ENDPOINT_EFFECT[] = L"{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},7";
 static const WCHAR PKEY_COMPOSITE_FX_ENDPOINT[] = L"{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},15";
+static const WCHAR PKEY_COMPOSITE_FX_MODE[] = L"{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},14";
+static const WCHAR PKEY_COMPOSITE_FX_OFFLOAD_MODE[] = L"{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},20";
+
+static std::vector<std::wstring> ReadMultiSz(HKEY hKey, LPCWSTR valueName) {
+    std::vector<std::wstring> result;
+    DWORD cbData = 0;
+    DWORD type = 0;
+    if (RegQueryValueExW(hKey, valueName, NULL, &type, NULL, &cbData) != ERROR_SUCCESS || cbData == 0) {
+        return result;
+    }
+    if (type != REG_MULTI_SZ && type != REG_SZ) {
+        return result;
+    }
+
+    std::vector<WCHAR> buf(cbData / sizeof(WCHAR) + 2, 0);
+    if (RegQueryValueExW(hKey, valueName, NULL, &type, (LPBYTE)buf.data(), &cbData) == ERROR_SUCCESS) {
+        if (type == REG_MULTI_SZ) {
+            LPCWSTR p = buf.data();
+            while (*p) {
+                result.push_back(p);
+                p += wcslen(p) + 1;
+            }
+        } else if (type == REG_SZ) {
+            result.push_back(buf.data());
+        }
+    }
+    return result;
+}
+
+static bool WriteMultiSz(HKEY hKey, LPCWSTR valueName, const std::vector<std::wstring>& list) {
+    std::vector<WCHAR> multiSz;
+    for (const auto& s : list) {
+        multiSz.insert(multiSz.end(), s.begin(), s.end());
+        multiSz.push_back(L'\0');
+    }
+    multiSz.push_back(L'\0'); // Double null terminator
+    DWORD cb = (DWORD)(multiSz.size() * sizeof(WCHAR));
+    return RegSetValueExW(hKey, valueName, 0, REG_MULTI_SZ, (const BYTE*)multiSz.data(), cb) == ERROR_SUCCESS;
+}
+
+static bool ContainsClsid(const std::vector<std::wstring>& list, const std::wstring& clsid) {
+    for (const auto& item : list) {
+        if (_wcsicmp(item.c_str(), clsid.c_str()) == 0) return true;
+    }
+    return false;
+}
 
 std::vector<AudioEndpointInfo> ApoManager::EnumerateEndpoints() {
     std::vector<AudioEndpointInfo> endpoints;
@@ -48,13 +96,29 @@ std::vector<AudioEndpointInfo> ApoManager::EnumerateEndpoints() {
         std::wstring fxKeyPath = std::wstring(RENDER_BASE_KEY) + L"\\" + subKeyName + L"\\FxProperties";
         HKEY hFx = NULL;
         if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, fxKeyPath.c_str(), 0, KEY_READ, &hFx) == ERROR_SUCCESS) {
+            const std::wstring target = L"{BABAE75F-A7AA-4A13-B1F7-BB2716FD003E}";
+
             WCHAR clsidVal[256] = {};
             DWORD cbData = sizeof(clsidVal);
-            if (RegQueryValueExW(hFx, PKEY_FX_ENDPOINT, NULL, NULL, (LPBYTE)clsidVal, &cbData) == ERROR_SUCCESS) {
-                if (_wcsicmp(clsidVal, L"{BABAE75F-A7AA-4A13-B1F7-BB2716FD003E}") == 0) {
+            if (RegQueryValueExW(hFx, PKEY_FX_POSTMIX, NULL, NULL, (LPBYTE)clsidVal, &cbData) == ERROR_SUCCESS) {
+                if (_wcsicmp(clsidVal, target.c_str()) == 0) {
                     info.isApoInstalled = true;
                 }
             }
+
+            if (!info.isApoInstalled) {
+                auto list15 = ReadMultiSz(hFx, PKEY_COMPOSITE_FX_ENDPOINT);
+                if (ContainsClsid(list15, target)) info.isApoInstalled = true;
+            }
+            if (!info.isApoInstalled) {
+                auto list20 = ReadMultiSz(hFx, PKEY_COMPOSITE_FX_OFFLOAD_MODE);
+                if (ContainsClsid(list20, target)) info.isApoInstalled = true;
+            }
+            if (!info.isApoInstalled) {
+                auto list14 = ReadMultiSz(hFx, PKEY_COMPOSITE_FX_MODE);
+                if (ContainsClsid(list14, target)) info.isApoInstalled = true;
+            }
+
             RegCloseKey(hFx);
         }
 
@@ -63,6 +127,37 @@ std::vector<AudioEndpointInfo> ApoManager::EnumerateEndpoints() {
 
     RegCloseKey(hBase);
     return endpoints;
+}
+
+static void BackupProperty(HKEY hFx, HKEY hBackup, LPCWSTR valueName) {
+    if (!hBackup) return;
+    DWORD type = 0;
+    DWORD cbData = 0;
+    if (RegQueryValueExW(hFx, valueName, NULL, &type, NULL, &cbData) == ERROR_SUCCESS && cbData > 0) {
+        std::vector<BYTE> data(cbData);
+        if (RegQueryValueExW(hFx, valueName, NULL, &type, data.data(), &cbData) == ERROR_SUCCESS) {
+            RegSetValueExW(hBackup, valueName, 0, type, data.data(), cbData);
+        }
+    } else {
+        const WCHAR na[] = L"GUID_NA";
+        RegSetValueExW(hBackup, valueName, 0, REG_SZ, (const BYTE*)na, sizeof(na));
+    }
+}
+
+static void RestoreProperty(HKEY hFx, HKEY hBackup, LPCWSTR valueName) {
+    if (!hBackup) return;
+    DWORD type = 0;
+    DWORD cbData = 0;
+    if (RegQueryValueExW(hBackup, valueName, NULL, &type, NULL, &cbData) == ERROR_SUCCESS && cbData > 0) {
+        std::vector<BYTE> data(cbData);
+        if (RegQueryValueExW(hBackup, valueName, NULL, &type, data.data(), &cbData) == ERROR_SUCCESS) {
+            if (type == REG_SZ && wcscmp((LPCWSTR)data.data(), L"GUID_NA") == 0) {
+                RegDeleteValueW(hFx, valueName);
+            } else {
+                RegSetValueExW(hFx, valueName, 0, type, data.data(), cbData);
+            }
+        }
+    }
 }
 
 bool ApoManager::InstallApoToEndpoint(const std::wstring& endpointGuid, const std::wstring& apoClsid) {
@@ -78,33 +173,62 @@ bool ApoManager::InstallApoToEndpoint(const std::wstring& endpointGuid, const st
         return false;
     }
 
-    // 1. Backup existing values if not already backed up
+    // Backup original values before making any modifications
     if (hBackup) {
-        WCHAR existingClsid[256] = {};
-        DWORD cbData = sizeof(existingClsid);
-        DWORD type = 0;
-        if (RegQueryValueExW(hFx, PKEY_FX_ENDPOINT, NULL, &type, (LPBYTE)existingClsid, &cbData) == ERROR_SUCCESS) {
-            if (_wcsicmp(existingClsid, apoClsid.c_str()) != 0) {
-                RegSetValueExW(hBackup, PKEY_FX_ENDPOINT, 0, type, (const BYTE*)existingClsid, cbData);
-            }
-        } else {
-            const WCHAR na[] = L"GUID_NA";
-            RegSetValueExW(hBackup, PKEY_FX_ENDPOINT, 0, REG_SZ, (const BYTE*)na, sizeof(na));
-        }
+        BackupProperty(hFx, hBackup, PKEY_FX_POSTMIX);
+        BackupProperty(hFx, hBackup, PKEY_FX_ENDPOINT_EFFECT);
+        BackupProperty(hFx, hBackup, PKEY_COMPOSITE_FX_ENDPOINT);
+        BackupProperty(hFx, hBackup, PKEY_COMPOSITE_FX_OFFLOAD_MODE);
+        BackupProperty(hFx, hBackup, PKEY_COMPOSITE_FX_MODE);
         RegCloseKey(hBackup);
     }
 
-    // 2. Write new APO CLSID
+    // 1. Install to PKEY_FX_POSTMIX (Legacy GFX key 2)
     DWORD cbData = (DWORD)((apoClsid.length() + 1) * sizeof(WCHAR));
-    RegSetValueExW(hFx, PKEY_FX_ENDPOINT, 0, REG_SZ, (const BYTE*)apoClsid.c_str(), cbData);
+    RegSetValueExW(hFx, PKEY_FX_POSTMIX, 0, REG_SZ, (const BYTE*)apoClsid.c_str(), cbData);
 
-    // REG_MULTI_SZ requires double null terminator
-    std::wstring multiSz = apoClsid + L'\0';
-    DWORD cbMulti = (DWORD)((multiSz.length() + 1) * sizeof(WCHAR));
-    RegSetValueExW(hFx, PKEY_COMPOSITE_FX_ENDPOINT, 0, REG_MULTI_SZ, (const BYTE*)multiSz.c_str(), cbMulti);
+    // 2. Install to PKEY_COMPOSITE_FX_ENDPOINT (CompositeFX key 15)
+    auto list15 = ReadMultiSz(hFx, PKEY_COMPOSITE_FX_ENDPOINT);
+    if (!ContainsClsid(list15, apoClsid)) {
+        list15.push_back(apoClsid);
+    }
+    WriteMultiSz(hFx, PKEY_COMPOSITE_FX_ENDPOINT, list15);
+
+    // 3. If Modern Windows 10/11 CompositeFX Mode Effect (key 20) is present on endpoint, append our APO
+    DWORD cb20 = 0;
+    if (RegQueryValueExW(hFx, PKEY_COMPOSITE_FX_OFFLOAD_MODE, NULL, NULL, NULL, &cb20) == ERROR_SUCCESS && cb20 > 0) {
+        auto list20 = ReadMultiSz(hFx, PKEY_COMPOSITE_FX_OFFLOAD_MODE);
+        if (!ContainsClsid(list20, apoClsid)) {
+            list20.push_back(apoClsid);
+            WriteMultiSz(hFx, PKEY_COMPOSITE_FX_OFFLOAD_MODE, list20);
+        }
+    }
+
+    // 4. If CompositeFX Mode Effect (key 14) is present, append our APO
+    DWORD cb14 = 0;
+    if (RegQueryValueExW(hFx, PKEY_COMPOSITE_FX_MODE, NULL, NULL, NULL, &cb14) == ERROR_SUCCESS && cb14 > 0) {
+        auto list14 = ReadMultiSz(hFx, PKEY_COMPOSITE_FX_MODE);
+        if (!ContainsClsid(list14, apoClsid)) {
+            list14.push_back(apoClsid);
+            WriteMultiSz(hFx, PKEY_COMPOSITE_FX_MODE, list14);
+        }
+    }
+
+    // 5. Ensure System Audio Effects & enhancements are enabled
+    DWORD dwZero = 0;
+    RegSetValueExW(hFx, L"{E9914457-331A-41B5-88A9-0E5930115576},0", 0, REG_DWORD, (const BYTE*)&dwZero, sizeof(DWORD));
+    RegSetValueExW(hFx, L"{1da5d803-d492-4edd-8c23-e0c0ffee7f0e},5", 0, REG_DWORD, (const BYTE*)&dwZero, sizeof(DWORD));
 
     RegCloseKey(hFx);
     return true;
+}
+
+bool ApoManager::IsApoInstalledOnAnyEndpoint() {
+    auto endpoints = EnumerateEndpoints();
+    for (const auto& ep : endpoints) {
+        if (ep.isApoInstalled) return true;
+    }
+    return false;
 }
 
 bool ApoManager::UninstallApoFromEndpoint(const std::wstring& endpointGuid) {
@@ -118,25 +242,42 @@ bool ApoManager::UninstallApoFromEndpoint(const std::wstring& endpointGuid) {
 
     HKEY hBackup = NULL;
     if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, backupPath.c_str(), 0, KEY_READ, &hBackup) == ERROR_SUCCESS) {
-        WCHAR oldClsid[256] = {};
-        DWORD cbData = sizeof(oldClsid);
-        DWORD type = 0;
-        if (RegQueryValueExW(hBackup, PKEY_FX_ENDPOINT, NULL, &type, (LPBYTE)oldClsid, &cbData) == ERROR_SUCCESS) {
-            if (wcscmp(oldClsid, L"GUID_NA") == 0) {
-                RegDeleteValueW(hFx, PKEY_FX_ENDPOINT);
-                RegDeleteValueW(hFx, PKEY_COMPOSITE_FX_ENDPOINT);
-            } else {
-                RegSetValueExW(hFx, PKEY_FX_ENDPOINT, 0, type, (const BYTE*)oldClsid, cbData);
-                std::wstring multiSz = std::wstring(oldClsid) + L'\0';
-                RegSetValueExW(hFx, PKEY_COMPOSITE_FX_ENDPOINT, 0, REG_MULTI_SZ, (const BYTE*)multiSz.c_str(), (DWORD)((multiSz.length() + 1) * sizeof(WCHAR)));
-            }
-        }
+        RestoreProperty(hFx, hBackup, PKEY_FX_POSTMIX);
+        RestoreProperty(hFx, hBackup, PKEY_FX_ENDPOINT_EFFECT);
+        RestoreProperty(hFx, hBackup, PKEY_COMPOSITE_FX_ENDPOINT);
+        RestoreProperty(hFx, hBackup, PKEY_COMPOSITE_FX_OFFLOAD_MODE);
+        RestoreProperty(hFx, hBackup, PKEY_COMPOSITE_FX_MODE);
+
         RegCloseKey(hBackup);
         RegDeleteTreeW(HKEY_LOCAL_MACHINE, backupPath.c_str());
     } else {
-        // Fallback: delete if was set to our APO
-        RegDeleteValueW(hFx, PKEY_FX_ENDPOINT);
-        RegDeleteValueW(hFx, PKEY_COMPOSITE_FX_ENDPOINT);
+        // Fallback: clean removal of our APO CLSID
+        const std::wstring target = L"{BABAE75F-A7AA-4A13-B1F7-BB2716FD003E}";
+
+        auto CleanMulti = [&](LPCWSTR valName) {
+            auto list = ReadMultiSz(hFx, valName);
+            std::vector<std::wstring> cleaned;
+            for (const auto& item : list) {
+                if (_wcsicmp(item.c_str(), target.c_str()) != 0) cleaned.push_back(item);
+            }
+            if (cleaned.empty()) {
+                RegDeleteValueW(hFx, valName);
+            } else {
+                WriteMultiSz(hFx, valName, cleaned);
+            }
+        };
+
+        CleanMulti(PKEY_COMPOSITE_FX_ENDPOINT);
+        CleanMulti(PKEY_COMPOSITE_FX_OFFLOAD_MODE);
+        CleanMulti(PKEY_COMPOSITE_FX_MODE);
+
+        WCHAR clsidVal[256] = {};
+        DWORD cbData = sizeof(clsidVal);
+        if (RegQueryValueExW(hFx, PKEY_FX_POSTMIX, NULL, NULL, (LPBYTE)clsidVal, &cbData) == ERROR_SUCCESS) {
+            if (_wcsicmp(clsidVal, target.c_str()) == 0) {
+                RegDeleteValueW(hFx, PKEY_FX_POSTMIX);
+            }
+        }
     }
 
     RegCloseKey(hFx);
@@ -151,23 +292,6 @@ bool ApoManager::InstallApoToAllEndpoints(const std::wstring& apoClsid) {
             allSuccess = false;
         }
     }
-
-    // If direct registry writes failed (e.g. non-elevated), fallback to system service pipe
-    if (!allSuccess) {
-        HANDLE hPipe = CreateFileW(L"\\\\.\\pipe\\Letasoft.SoundBooster.Svc",
-                                   GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
-        if (hPipe != INVALID_HANDLE_VALUE) {
-            DWORD cmd[4] = { 8, 0, 0, 0 }; // Command 8 = Register APO via service running as SYSTEM
-            DWORD dwWritten = 0;
-            WriteFile(hPipe, cmd, sizeof(cmd), &dwWritten, NULL);
-            DWORD reply[4] = { 0 };
-            DWORD dwRead = 0;
-            ReadFile(hPipe, reply, sizeof(reply), &dwRead, NULL);
-            CloseHandle(hPipe);
-            allSuccess = true;
-        }
-    }
-
     return allSuccess;
 }
 
@@ -225,33 +349,18 @@ bool ApoManager::UnregisterApoDll() {
 }
 
 void ApoManager::RestartAudioService() {
-    // First try direct SCM control (works when elevated)
     SC_HANDLE hSCM = OpenSCManagerW(NULL, NULL, SC_MANAGER_ALL_ACCESS);
     if (hSCM) {
         SC_HANDLE hSvc = OpenServiceW(hSCM, L"AudioSrv", SERVICE_STOP | SERVICE_START | SERVICE_QUERY_STATUS);
         if (hSvc) {
             SERVICE_STATUS status;
             ControlService(hSvc, SERVICE_CONTROL_STOP, &status);
-            Sleep(1000);
+            Sleep(1500);
             StartServiceW(hSvc, 0, NULL);
             CloseServiceHandle(hSvc);
             CloseServiceHandle(hSCM);
             return;
         }
         CloseServiceHandle(hSCM);
-    }
-
-    // Fallback: request restart via Letasoft service pipe (runs as SYSTEM)
-    HANDLE hPipe = CreateFileW(L"\\\\.\\pipe\\Letasoft.SoundBooster.Svc",
-                               GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
-    if (hPipe != INVALID_HANDLE_VALUE) {
-        DWORD cmd[4] = { 11, 0, 0, 0 }; // Command 11 = PerformServiceRestart
-        DWORD dwWritten = 0;
-        WriteFile(hPipe, cmd, sizeof(cmd), &dwWritten, NULL);
-        DWORD reply[4] = { 0 };
-        DWORD dwRead = 0;
-        ReadFile(hPipe, reply, sizeof(reply), &dwRead, NULL);
-        CloseHandle(hPipe);
-        Sleep(1000);
     }
 }
