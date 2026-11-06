@@ -27,6 +27,7 @@ private:
     static DWORD WINAPI WatcherThreadProc(LPVOID lpParam);
     void WatcherLoop();
 
+    HANDLE m_hFile;
     HANDLE m_hMapFile;
     void* m_pSharedBuf;
     HANDLE m_hUpdateEvent;

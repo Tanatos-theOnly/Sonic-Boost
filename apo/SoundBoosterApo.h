@@ -78,6 +78,7 @@ private:
 
     IUnknown* m_pUnkOuter;
     LONG m_cRef;
+    HANDLE m_hFile;
     HANDLE m_hMapFile;
     const char* m_pSharedBuf;
     HANDLE m_hUpdateEvent;

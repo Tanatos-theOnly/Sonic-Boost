@@ -18,7 +18,8 @@ static void LogDebug(const wchar_t* msg) {
 }
 
 ApoController::ApoController()
-    : m_hMapFile(NULL),
+    : m_hFile(NULL),
+      m_hMapFile(NULL),
       m_pSharedBuf(nullptr),
       m_hUpdateEvent(NULL),
       m_hCreateEvent(NULL),
@@ -41,35 +42,38 @@ bool ApoController::TryConnect() {
         return true;
     }
 
-    if (!m_hMapFile) {
-        // Try to open existing mapping first (created by APO in audiodg)
-        m_hMapFile = OpenFileMappingW(FILE_MAP_READ | FILE_MAP_WRITE, FALSE, L"Global\\SbapoConfigData");
-
-        if (!m_hMapFile) {
-            // Pre-create the shared memory with Low-IL SDDL so both audiodg and user app can access it
-            PSECURITY_DESCRIPTOR pSd = NULL;
-            if (ConvertStringSecurityDescriptorToSecurityDescriptorW(
-                L"D:(A;OICI;GA;;;AU)(A;OICI;GA;;;BA)(A;OICI;GA;;;WD)(A;OICI;GA;;;SY)S:(ML;;NWNR;;;LW)",
-                SDDL_REVISION_1, &pSd, NULL))
-            {
-                SECURITY_ATTRIBUTES sa = { sizeof(sa), pSd, FALSE };
-                m_hMapFile = CreateFileMappingW(INVALID_HANDLE_VALUE, &sa,
-                                                PAGE_READWRITE, 0, 256, L"Global\\SbapoConfigData");
-                if (m_hMapFile) {
-                    LogDebug(L"[APO] Created Global\\SbapoConfigData shared memory (pre-created by app).");
-                    void* pInit = MapViewOfFile(m_hMapFile, FILE_MAP_WRITE, 0, 0, 256);
-                    if (pInit) {
-                        sprintf_s((char*)pInit, 256, "# Boost: 0 dB 0\nEnableOldApo: 0\n");
-                        UnmapViewOfFile(pInit);
-                    }
-                }
-                LocalFree(pSd);
+    if (!m_hFile) {
+        m_hFile = CreateFileW(
+            L"C:\\Users\\Public\\sbapo_state.dat",
+            GENERIC_READ | GENERIC_WRITE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            NULL,
+            OPEN_ALWAYS,
+            FILE_ATTRIBUTE_NORMAL,
+            NULL
+        );
+        if (m_hFile != INVALID_HANDLE_VALUE) {
+            LARGE_INTEGER sz = {};
+            GetFileSizeEx(m_hFile, &sz);
+            if (sz.QuadPart < 256) {
+                sz.QuadPart = 256;
+                SetFilePointerEx(m_hFile, sz, NULL, FILE_BEGIN);
+                SetEndOfFile(m_hFile);
             }
+        } else {
+            m_hFile = NULL;
         }
+    }
+
+    if (m_hFile && !m_hMapFile) {
+        m_hMapFile = CreateFileMappingW(m_hFile, NULL, PAGE_READWRITE, 0, 256, NULL);
     }
 
     if (m_hMapFile && !m_pSharedBuf) {
         m_pSharedBuf = MapViewOfFile(m_hMapFile, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 256);
+        if (m_pSharedBuf) {
+            LogDebug(L"[APO] Successfully mapped sbapo_state.dat shared bridge in app.");
+        }
     }
 
     if (!m_hUpdateEvent) {
@@ -228,6 +232,10 @@ void ApoController::Shutdown() {
         CloseHandle(m_hMapFile);
         m_hMapFile = NULL;
     }
+    if (m_hFile) {
+        CloseHandle(m_hFile);
+        m_hFile = NULL;
+    }
     if (m_hUpdateEvent) {
         CloseHandle(m_hUpdateEvent);
         m_hUpdateEvent = NULL;
@@ -292,7 +300,8 @@ void ApoController::UpdateSharedData() {
     }
 
     if (m_pSharedBuf) {
-        sprintf_s((char*)m_pSharedBuf, 256, "%s", cfgStr);
+        memcpy(m_pSharedBuf, cfgStr, 256);
+        FlushViewOfFile(m_pSharedBuf, 256);
         if (m_hUpdateEvent) {
             SetEvent(m_hUpdateEvent);
         }

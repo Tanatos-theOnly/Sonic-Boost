@@ -45,6 +45,7 @@ CSoundBoosterAPO::CSoundBoosterAPO(IUnknown* pUnkOuter)
       m_innerUnknown(this),
       m_pUnkOuter(pUnkOuter),
       m_cRef(1),
+      m_hFile(NULL),
       m_hMapFile(NULL),
       m_pSharedBuf(nullptr),
       m_hUpdateEvent(NULL),
@@ -69,6 +70,10 @@ CSoundBoosterAPO::~CSoundBoosterAPO() {
     if (m_hMapFile) {
         CloseHandle(m_hMapFile);
         m_hMapFile = NULL;
+    }
+    if (m_hFile) {
+        CloseHandle(m_hFile);
+        m_hFile = NULL;
     }
     if (m_hUpdateEvent) {
         CloseHandle(m_hUpdateEvent);
@@ -280,64 +285,54 @@ static bool ReadStateFile(char* outBuf, size_t maxLen) {
 }
 
 void CSoundBoosterAPO::CheckSharedConfig() {
-    if (!m_hMapFile) {
-        // First try to open an existing mapping (created by app-side ApoController)
-        m_hMapFile = OpenFileMappingA(FILE_MAP_READ | FILE_MAP_WRITE, FALSE, "Global\\SbapoConfigData");
-
-        if (!m_hMapFile) {
-            // APO creates it with a permissive DACL and Low Mandatory Integrity Level (S:(ML;;NWNR;;;LW))
-            // so that user-space processes (Medium integrity) can open it with write access.
-            PSECURITY_DESCRIPTOR pSd = NULL;
-            if (ConvertStringSecurityDescriptorToSecurityDescriptorA(
-                "D:(A;OICI;GA;;;AU)(A;OICI;GA;;;BA)(A;OICI;GA;;;WD)(A;OICI;GA;;;SY)S:(ML;;NWNR;;;LW)",
-                SDDL_REVISION_1, &pSd, NULL))
-            {
-                SECURITY_ATTRIBUTES sa = { sizeof(sa), pSd, FALSE };
-                m_hMapFile = CreateFileMappingA(INVALID_HANDLE_VALUE, &sa,
-                                                PAGE_READWRITE, 0, 256, "Global\\SbapoConfigData");
-                if (m_hMapFile) {
-                    LogApo("Successfully created Global\\SbapoConfigData shared memory with Low-IL SDDL");
-                    void* pInit = MapViewOfFile(m_hMapFile, FILE_MAP_WRITE, 0, 0, 256);
-                    if (pInit) {
-                        char state[256] = {};
-                        if (ReadStateFile(state, sizeof(state)) && state[0] != '\0') {
-                            sprintf_s((char*)pInit, 256, "%s", state);
-                        } else {
-                            sprintf_s((char*)pInit, 256, "# Boost: 0 dB 0\nEnableOldApo: 0\n");
-                        }
-                        UnmapViewOfFile(pInit);
-                    }
-                } else {
-                    char errBuf[128];
-                    sprintf_s(errBuf, "CreateFileMapping Global\\SbapoConfigData failed: %lu", GetLastError());
-                    LogApo(errBuf);
-                }
-
-                if (!m_hCreateEvent) {
-                    m_hCreateEvent = CreateEventA(&sa, FALSE, FALSE, "Global\\SbapoDataCreate");
-                    if (m_hCreateEvent) {
-                        LogApo("Created Global\\SbapoDataCreate notification event");
-                        SetEvent(m_hCreateEvent);
-                    }
-                }
-
-                if (!m_hUpdateEvent) {
-                    m_hUpdateEvent = CreateEventA(&sa, FALSE, FALSE, "Global\\SbapoDataUpdate");
-                }
-
-                LocalFree(pSd);
+    if (!m_pSharedBuf) {
+        if (!m_hFile) {
+            m_hFile = CreateFileA(
+                "C:\\Users\\Public\\sbapo_state.dat",
+                GENERIC_READ | GENERIC_WRITE,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                NULL,
+                OPEN_ALWAYS,
+                FILE_ATTRIBUTE_NORMAL,
+                NULL
+            );
+            if (m_hFile == INVALID_HANDLE_VALUE) {
+                m_hFile = CreateFileA(
+                    "C:\\Users\\Public\\sbapo_state.dat",
+                    GENERIC_READ,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE,
+                    NULL,
+                    OPEN_EXISTING,
+                    FILE_ATTRIBUTE_NORMAL,
+                    NULL
+                );
             }
-        } else {
-            LogApo("Opened existing Global\\SbapoConfigData mapping");
+            if (m_hFile == INVALID_HANDLE_VALUE) {
+                m_hFile = NULL;
+            } else {
+                LARGE_INTEGER sz = {};
+                GetFileSizeEx(m_hFile, &sz);
+                if (sz.QuadPart < 256) {
+                    sz.QuadPart = 256;
+                    SetFilePointerEx(m_hFile, sz, NULL, FILE_BEGIN);
+                    SetEndOfFile(m_hFile);
+                }
+            }
+        }
+
+        if (m_hFile && !m_hMapFile) {
+            m_hMapFile = CreateFileMappingA(m_hFile, NULL, PAGE_READWRITE, 0, 256, NULL);
+            if (!m_hMapFile) {
+                m_hMapFile = CreateFileMappingA(m_hFile, NULL, PAGE_READONLY, 0, 256, NULL);
+            }
         }
 
         if (m_hMapFile) {
-            m_pSharedBuf = (const char*)MapViewOfFile(m_hMapFile, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 256);
+            m_pSharedBuf = (const char*)MapViewOfFile(m_hMapFile, FILE_MAP_READ, 0, 0, 256);
+            if (m_pSharedBuf) {
+                LogApo("Successfully mapped sbapo_state.dat shared bridge in audiodg");
+            }
         }
-    }
-
-    if (!m_hUpdateEvent) {
-        m_hUpdateEvent = OpenEventA(SYNCHRONIZE | EVENT_MODIFY_STATE, FALSE, "Global\\SbapoDataUpdate");
     }
 
     const char* pConfig = m_pSharedBuf;
